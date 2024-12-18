@@ -1,7 +1,6 @@
 #include <algorithm>
 #include <cstdint>
 #include <iostream>
-#include <iterator>
 #include <string>
 #include <vector>
 typedef uint32_t AYS_fixture_id;
@@ -9,6 +8,7 @@ typedef uint32_t AYS_provider_id;
 typedef uint32_t AYS_sport_id;
 typedef uint32_t AYS_bet_type_id;
 typedef std::string AYS_participant;
+typedef bool (*AYS_fixture_comparison_func)(const struct AYS_fixture&, const struct AYS_fixture&);
 
 struct AYS_fixture {
     uint64_t unix_time;
@@ -66,13 +66,21 @@ bool AYS_p2_compare(const struct AYS_fixture &f1, const struct AYS_fixture &f2){
     return f1.p2.compare(f2.p2) < 0;
 }
 
-void split_on_diff(std::vector<struct AYS_fixture> fs, bool (*comp)(const struct AYS_fixture&, const struct AYS_fixture&), std::vector<std::vector<AYS_fixture>> &out) {
+void split_on_diff( std::vector<struct AYS_fixture> fs, 
+                    std::vector<std::vector<AYS_fixture>> &out,
+                    std::vector<AYS_fixture_comparison_func> comps) {
     if (fs.size() == 0) return;
-    std::stable_sort(fs.begin(), fs.end(), comp);
+    for (auto& comp : comps){
+        std::stable_sort(fs.begin(), fs.end(), comp);
+    }
     int start_idx = 0;
-    for (int idx = 0; idx < fs.size(); idx++){
-        if (!comp(fs[idx], fs[start_idx]) and !comp(fs[start_idx], fs[idx])) {
-	    std::cout << idx << " skipped" << std::endl;
+    for (size_t idx = 0; idx < fs.size(); idx++){
+        bool skip = true;
+        for (auto& comp : comps){
+            skip &= !comp(fs[idx], fs[start_idx]) and !comp(fs[start_idx], fs[idx]);
+        }
+        if (skip) {
+            std::cout << idx << " skipped" << std::endl;
             continue;
         }
         out.emplace_back(fs.begin()+start_idx, fs.begin()+idx);
@@ -87,15 +95,10 @@ std::vector<AYS_event> AYS_fixtures_to_events(std::vector<AYS_fixture> fs) {
         return result;
     }
 
-    std::vector<std::vector<AYS_fixture>> fixture_groups1;
-    std::vector<std::vector<AYS_fixture>> fixture_groups2;
-
-    split_on_diff(fs, &AYS_unix_time_compare, fixture_groups1);
-    for (std::vector<struct AYS_fixture> group : fixture_groups1){
-    	split_on_diff(group, &AYS_sid_compare, fixture_groups2);
-    }
+    std::vector<std::vector<AYS_fixture>> fixture_groups;
+    split_on_diff(fs, fixture_groups, {AYS_unix_time_compare, AYS_btid_compare, AYS_sid_compare, AYS_p1_compare, AYS_p2_compare});
     
-    for (std::vector<struct AYS_fixture> group : fixture_groups2){
+    for (std::vector<struct AYS_fixture> group : fixture_groups){
         for (struct AYS_fixture &f : group){
             std::cout << AYS_fixture_to_string(f) << std::endl; 
         }
