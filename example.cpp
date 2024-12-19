@@ -12,15 +12,19 @@ int main (int argc, char *argv[]) {
         int participants = 2 + (rand()%(names.size()-1));
         std::vector<std::string> pn(participants);
         std::vector<float> po(participants);
+        std::vector<float> pno(participants);
         int margin = 20;
-        int per_left = 1000+margin;
+        int per_tot = 1000+margin;
+        int per_left = per_tot;
 
         for (int p = 0; p < participants-1; p++){
             int per = rand()%(per_left-participants+1-margin)+1;
             po[p] = 1/(per/1000.f);
+            pno[p] = 1/((per_tot-per)/1000.f);
             per_left-=per;
         }
         po[participants-1] = 1/(per_left/1000.f);
+        pno[participants-1] = 1/((per_tot-per_left)/1000.f);
         for (int p = 0; p< participants; p++){
             pn[p] = names[p][rand()%names[p].size()];
         }
@@ -28,7 +32,8 @@ int main (int argc, char *argv[]) {
         uint32_t pid = rand() % 2;
         uint32_t sid = rand() % 3;
         uint32_t btid = participants;
-        market_maker1.emplace_back(ut, pid, sid, btid, pn, po);
+        market_maker1.emplace_back(ut, pid, sid, btid , pn, pno,po);
+
     }
 #if 0
     for (auto& fix : market_maker1){
@@ -39,7 +44,7 @@ int main (int argc, char *argv[]) {
 #endif
     std::vector<AYS_event> res = AYS_fixtures_to_events(market_maker1);
     for (auto& event : res) {
-        if (event.total_arb_percentage < 1) { 
+        if (event.roi > 0) { 
             std::cout << AYS_event_to_string(event) << '\n';
         }
     }
