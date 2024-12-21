@@ -131,7 +131,10 @@ std::string AYS_fixture_to_string(const AYS_fixture fixture) {
     for (int i = 0; print_not_odds && i < (int)fixture.participant_names.size(); i++){
         result += " | NOT "  + fixture.participant_names[i];
     }
-    result += " @ " + std::to_string(fixture.unix_time) + " sid: " + std::to_string(fixture.sid) + " pid "+ std::to_string(fixture.pid) + " ";
+    std::tm * ptm = std::localtime(&fixture.unix_time);
+    char buffer[32];
+    std::strftime(buffer, 32, "%d/%m-%YT%H:%M:%S", ptm);
+    result += " @ " + std::string(buffer) + " sid: " + std::to_string(fixture.sid) + " pid "+ std::to_string(fixture.pid) + " ";
     result += std::to_string(fixture.participant_odds[0]);
     for (int i = 1; i< (int)fixture.participant_odds.size(); i++){
         result += " | " + std::to_string(fixture.participant_odds[i]);
@@ -146,7 +149,10 @@ std::string AYS_event_to_string(const AYS_event event) {
     for (int i = 1; i< (int)event.participant_names.size(); i++){
         result += " | " + event.participant_names[i];
     }
-    result += " @ " + std::to_string(event.unix_time) + " sid: " + std::to_string(event.sid) + " ARB(not): " + std::to_string(event.arb*100) + "% (" +std::to_string(event.not_arb*100) + "%)" + " ROI: " + std::to_string(event.roi) + "%";
+    std::tm * ptm = std::localtime(&event.unix_time);
+    char buffer[32];
+    std::strftime(buffer, 32, "%d/%m-%YT%H:%M:%S", ptm);
+    result += " @ " + std::string(buffer) + " sid: " + std::to_string(event.sid) + " ARB(not): " + std::to_string(event.arb*100) + "% (" +std::to_string(event.not_arb*100) + "%)" + " ROI: " + std::to_string(event.roi) + "%";
     for (int i = 0; i< (int)event.fixtures.size(); i++){
         result += "\n    " + AYS_fixture_to_string(event.fixtures[i]);
     }
