@@ -81,15 +81,15 @@ struct AYS_event {
 
 
 bool AYS_event_arb(AYS_event &event){
-    std::vector<float> max_odds(event.fixtures[0].participant_odds);
-    std::vector<float> max_not_odds(event.fixtures[0].participant_not_odds);
+    std::vector<float> max_odds(event.participant_names.size(),1);
+    std::vector<float> max_not_odds(event.participant_names.size(),1);
     if (max_odds.size() != max_not_odds.size()){
         std::cerr << "diffent amount of odds and not_odds in event:" << "\n" 
                   << AYS_event_to_string(event) << std::endl;
         return false;
 
     }
-    for (int i = 1; i < (int)event.fixtures.size(); i++){
+    for (int i = 0; i < (int)event.fixtures.size(); i++){
         if (max_odds.size() != event.fixtures[i].participant_odds.size()){
             std::cerr << "diffent amount of outcomes in fixtures 0 and " << i << "\n" 
                       << AYS_event_to_string(event) << std::endl;
@@ -120,11 +120,15 @@ bool AYS_event_arb(AYS_event &event){
 }
 
 std::string AYS_fixture_to_string(const AYS_fixture fixture) {
+    bool print_not_odds = false;;
+    for (int i = 0; i< (int)fixture.participant_not_odds.size(); i++){
+        print_not_odds |= fixture.participant_not_odds[i] > 1.;
+    }
     std::string result = fixture.participant_names[0];
     for (int i = 1; i< (int)fixture.participant_names.size(); i++){
         result += " | " + fixture.participant_names[i];
     }
-    for (int i = 0; i< (int)fixture.participant_names.size(); i++){
+    for (int i = 0; print_not_odds && i < (int)fixture.participant_names.size(); i++){
         result += " | NOT "  + fixture.participant_names[i];
     }
     result += " @ " + std::to_string(fixture.unix_time) + " sid: " + std::to_string(fixture.sid) + " pid "+ std::to_string(fixture.pid) + " ";
@@ -132,7 +136,7 @@ std::string AYS_fixture_to_string(const AYS_fixture fixture) {
     for (int i = 1; i< (int)fixture.participant_odds.size(); i++){
         result += " | " + std::to_string(fixture.participant_odds[i]);
     }
-    for (int i = 0; i< (int)fixture.participant_not_odds.size(); i++){
+    for (int i = 0; print_not_odds && i < (int)fixture.participant_not_odds.size(); i++){
         result += " | " + std::to_string(fixture.participant_not_odds[i]);
     }
     return result;
