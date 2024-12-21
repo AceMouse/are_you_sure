@@ -4,6 +4,7 @@
 #include <vector>
 #include <limits>
 #include <iostream>
+#include <ctime>
 
 #include "includes/levenshtein-sse.hpp"
 
@@ -30,7 +31,7 @@ std::vector<AYS_event> AYS_fixtures_to_events(std::vector<AYS_fixture> fs);
 
 
 struct AYS_fixture {
-    uint64_t unix_time;
+    time_t unix_time;
     AYS_provider_id pid;
     AYS_fixture_id id;
     AYS_sport_id sid;
@@ -38,7 +39,7 @@ struct AYS_fixture {
     std::vector<AYS_participant> participant_names;
     std::vector<AYS_odd> participant_not_odds;
     std::vector<AYS_odd> participant_odds;
-    AYS_fixture(uint64_t unix_time,
+    AYS_fixture(time_t unix_time,
 		AYS_provider_id pid,
 		AYS_sport_id sid,
 		AYS_bet_type_id btid,
@@ -52,23 +53,10 @@ struct AYS_fixture {
         , participant_names(std::move(participant_names))
         , participant_not_odds(std::move(participant_not_odds))
         , participant_odds(std::move(participant_odds)) { }
-    AYS_fixture(uint64_t unix_time,
-		AYS_provider_id pid,
-		AYS_sport_id sid,
-		AYS_bet_type_id btid,
-		std::vector<AYS_participant> &participant_names,
-        std::vector<AYS_odd> &participant_odds) 
-        : unix_time(unix_time)
-        , pid(pid)
-        , sid(sid)
-        , btid(btid)
-        , participant_names(std::move(participant_names))
-        , participant_not_odds((int)participant_names.size(),1)
-        , participant_odds(std::move(participant_odds)) { }
 };
 
 struct AYS_event {
-    uint64_t unix_time;
+    time_t unix_time;
     AYS_sport_id sid;
     AYS_bet_type_id btid;
     float arb;
@@ -95,6 +83,12 @@ struct AYS_event {
 bool AYS_event_arb(AYS_event &event){
     std::vector<float> max_odds(event.fixtures[0].participant_odds);
     std::vector<float> max_not_odds(event.fixtures[0].participant_not_odds);
+    if (max_odds.size() != max_not_odds.size()){
+        std::cerr << "diffent amount of odds and not_odds in event:" << "\n" 
+                  << AYS_event_to_string(event) << std::endl;
+        return false;
+
+    }
     for (int i = 1; i < (int)event.fixtures.size(); i++){
         if (max_odds.size() != event.fixtures[i].participant_odds.size()){
             std::cerr << "diffent amount of outcomes in fixtures 0 and " << i << "\n" 
@@ -163,7 +157,10 @@ bool AYS_arb_compare(const AYS_event &e1, const AYS_event &e2){
     return std::min(e1.arb,e1.not_arb) > std::min(e2.arb,e2.not_arb);
 }
 bool AYS_unix_time_compare(const AYS_fixture &f1, const AYS_fixture &f2){
-    return f1.unix_time < f2.unix_time;
+    return difftime(f1.unix_time, f2.unix_time) < 0;
+}
+bool AYS_participant_number_compare(const AYS_fixture &f1, const AYS_fixture &f2){
+    return f1.participant_names.size() < f2.participant_names.size();
 }
 
 bool AYS_btid_compare(const AYS_fixture &f1, const AYS_fixture &f2){
@@ -320,7 +317,7 @@ std::vector<AYS_event> AYS_fixtures_to_events(std::vector<AYS_fixture> fs) {
     }
 
     std::vector<std::vector<AYS_fixture>> fixture_groups;
-    split_on_diff(fs, fixture_groups, {AYS_unix_time_compare, AYS_btid_compare, AYS_sid_compare});
+    split_on_diff(fs, fixture_groups, {AYS_unix_time_compare, AYS_btid_compare, AYS_sid_compare, AYS_participant_number_compare});
     while (fixture_groups.size() > 0) { 
         std::vector<std::vector<AYS_fixture>> dissimilar_fixture_groups;
         for (std::vector<AYS_fixture> group : fixture_groups){
