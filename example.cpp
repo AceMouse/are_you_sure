@@ -16,6 +16,8 @@ int main (int argc, char *argv[]) {
         int margin = 20;
         int per_tot = 1000+margin;
         int per_left = per_tot;
+        int lines[] = {0,1000,2000,3000};
+        int line = lines[rand()%4];
 
         for (int p = 0; p < participants-1; p++){
             int per = rand()%(per_left-participants+1-margin)+1;
@@ -28,11 +30,16 @@ int main (int argc, char *argv[]) {
         for (int p = 0; p< participants; p++){
             pn[p] = names[p][rand()%names[p].size()];
         }
-        uint64_t ut = rand()% 10;;
+        uint64_t ut = rand()% 10;
+        time_t now = time(0);
+        struct tm now_tm = *localtime( &now);
+        struct tm exp_tm = now_tm;
+        exp_tm.tm_sec += (rand()%50);   // add 50 seconds to the time
+        time_t exp = mktime( &exp_tm);
         uint32_t pid = rand() % 2;
         uint32_t sid = rand() % 3;
         uint32_t btid = participants;
-        market_maker1.emplace_back(ut, pid, sid, btid , pn, pno,po);
+        market_maker1.emplace_back(ut, exp, pid, sid, btid, line , pn, pno,po);
 
     }
 #if 0
@@ -45,7 +52,7 @@ int main (int argc, char *argv[]) {
     std::vector<AYS_event> res = AYS_fixtures_to_events(market_maker1);
     for (auto& event : res) {
         if (event.roi > 0) { 
-            std::cout << AYS_event_to_string(event) << '\n';
+            std::cout << AYS_event_to_string_pretty(event) << '\n';
         }
     }
     return 0;
