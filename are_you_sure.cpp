@@ -187,7 +187,7 @@ std::string AYS_event_to_string_pretty(const AYS_event &event, std::vector<std::
     }
     std::string result = fmt::format("@ {} sid: {} btid: {}{} {}ARB: {:.2f}% ROI: {:.2f}% profit: {:.2f} assuming same currency\n\t", buffer, event.sid, event.btid, 
                           (event.line?fmt::format(" line: {}",event.line):""),
-                          event.arb <= event.not_arb?"n":"", 
+                          event.arb <= event.not_arb?"":"n", 
                           std::min(event.arb,event.not_arb)*100,
                           event.roi,
                           max_profit);
