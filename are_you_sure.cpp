@@ -84,6 +84,7 @@ struct AYS_event {
     std::vector<AYS_participant> participant_names;
     std::vector<float> participant_stakes;
     std::vector<AYS_fixture> fixtures;
+    int max_not_arb_idx;
     AYS_event(std::vector<AYS_fixture> &fixtures) 
         : start_time(fixtures[0].start_time)
         , sid(fixtures[0].sid)
@@ -122,6 +123,7 @@ bool AYS_event_arb(AYS_event &event){
         per += max_odds[i];
         if (event.not_arb > max_odds[i]+max_not_odds[i]){
             event.not_arb = max_odds[i]+max_not_odds[i];
+            event.max_not_arb_idx = i;
         }
 
     }
@@ -130,32 +132,48 @@ bool AYS_event_arb(AYS_event &event){
     return true;
 }
 
-bool AYS_event_max_arb_stakes(const AYS_event &event, std::vector<float> &stakes,std::vector<int> &max_idx, float *max_profit){
-    max_idx.resize(event.participant_names.size(),0);
-    stakes.resize(event.participant_names.size(),0);
+bool AYS_event_max_arb_stakes(const AYS_event &event, std::vector<float> &stakes, std::vector<int> &max_idx, std::vector<int> &max_not_idx, float *max_profit){
+    max_idx.resize(event.participant_names.size(),-1);
+    max_not_idx.resize(event.participant_names.size(),-1);
     std::vector<float> max_odds(event.participant_names.size(),1);
+    std::vector<float> max_not_odds(event.participant_names.size(),1);
     for (int i = 0; i < (int)event.fixtures.size(); i++){
         for (int j = 0; j < (int)max_odds.size();j++){
             if (max_odds[j] > event.fixtures[i].participant_odds[j]){
                 max_odds[j] = event.fixtures[i].participant_odds[j]; 
                 max_idx[j] = i; 
             }
+            if (max_not_odds[j] > event.fixtures[i].participant_not_odds[j]){
+                max_not_odds[j] = event.fixtures[i].participant_not_odds[j]; 
+                max_not_idx[j] = i; 
+            }
         }
     }
     float max_total_stake = std::numeric_limits<float>::infinity();
     float total_percentage_odds = std::min(event.not_arb,event.arb);
-    for (int idx = 0; idx < (int)event.participant_names.size(); idx++){
-        float potential_stake = event.fixtures[max_idx[idx]].max_nominal_bet*total_percentage_odds/max_odds[idx];
-        if (max_total_stake > potential_stake) {
-            max_total_stake = potential_stake;
+    if (event.arb <= event.not_arb){
+        stakes.resize(event.participant_names.size(),0);
+        for (int idx = 0; idx < (int)event.participant_names.size(); idx++){
+            float potential_stake = event.fixtures[max_idx[idx]].max_nominal_bet*total_percentage_odds/max_odds[idx];
+            if (max_total_stake > potential_stake) {
+                max_total_stake = potential_stake;
+            }
         }
-    }
-    for (int idx = 0; idx < (int)event.participant_names.size(); idx++){
-        stakes[idx] = max_total_stake*max_odds[idx]/total_percentage_odds;
+        for (int idx = 0; idx < (int)event.participant_names.size(); idx++){
+            stakes[idx] = max_total_stake*max_odds[idx]/total_percentage_odds;
+        }
+    } else {
+        stakes.resize(2,0);
+        int idx = event.max_not_arb_idx;
+        max_total_stake = std::min(event.fixtures[max_idx[idx]].max_nominal_bet*total_percentage_odds/max_odds[idx],
+                                   event.fixtures[max_not_idx[idx]].max_nominal_bet*total_percentage_odds/max_not_odds[idx]);
+        stakes[0] = max_total_stake*max_odds[idx]/total_percentage_odds;
+        stakes[1] = max_total_stake*max_not_odds[idx]/total_percentage_odds;
     }
     *max_profit = max_total_stake/total_percentage_odds-max_total_stake;
     return true;
 }
+
 
 std::string AYS_event_to_string_pretty(const AYS_event &event, std::vector<std::string> provider_names) {
     std::vector<float> max_odds(event.participant_names.size(),1);
@@ -170,19 +188,15 @@ std::string AYS_event_to_string_pretty(const AYS_event &event, std::vector<std::
             }
         }
     }
-    bool print_not_odds = false;
-    for (int i = 0; i < (int)event.fixtures.size(); i++){
-        for (int j = 0; !print_not_odds && j < (int)event.fixtures[i].participant_not_odds.size(); j++){
-            print_not_odds |= event.fixtures[i].participant_not_odds[j] > 1.;
-        }
-    }
+    bool not_odds = event.not_arb < event.arb;
     std::tm * ptm = std::localtime(&event.start_time);
     char buffer[32];
     std::strftime(buffer, 32, "%d/%m-%YT%H:%M:%S", ptm);
     std::vector<float> stakes; 
     std::vector<int> max_idx; 
+    std::vector<int> max_not_idx; 
     float max_profit = 0;
-    if (!AYS_event_max_arb_stakes(event, stakes, max_idx, &max_profit)){
+    if (!AYS_event_max_arb_stakes(event, stakes, max_idx, max_not_idx, &max_profit)){
         return "STAKES FAIL";
     }
     std::string result = fmt::format("@ {} sid: {} btid: {}{} {}ARB: {:.2f}% ROI: {:.2f}% profit: {:.2f} assuming same currency\n\t", buffer, event.sid, event.btid, 
@@ -193,63 +207,68 @@ std::string AYS_event_to_string_pretty(const AYS_event &event, std::vector<std::
                           max_profit);
 
     int min_width = 5;
-    for (int i = 0; i < (int) stakes.size(); i++ ){
-        int width = std::max(min_width,(int)event.fixtures[0].participant_names[i].size());
-        result += fmt::format("{:^{}.2f} | ", stakes[i], width); 
-    }
-    result += " <- stakes for max profit\n"; 
-    result += fmt::format("\t{:^{}}", event.participant_names[0], min_width);
-    for (int i = 1; i< (int)event.participant_names.size(); i++){
-        result += fmt::format(" | {:^{}}", event.participant_names[i], min_width);
-    }
-    result += " | max bet | currency | provider | event id \n";
-    if (print_not_odds){
-        for (int i = 0; i< (int)event.participant_names.size(); i++){
-            result += fmt::format(" | Not {:^{}}", event.participant_names[i], min_width);
+    if (not_odds){
+        int width = std::max(min_width,(int)event.fixtures[0].participant_names[event.max_not_arb_idx].size());
+        int not_width = std::max(min_width,(int)event.fixtures[0].participant_names[event.max_not_arb_idx].size()+4);
+        result += fmt::format("{0:^{1}.2f} | {2:^{3}.2f}", stakes[0], width, stakes[1], not_width); 
+        result += " <- stakes for max profit\n"; 
+        result += fmt::format("\t{0:^{1}} | Not {0:^{1}}", event.participant_names[event.max_not_arb_idx], min_width);
+    } else {
+        for (int i = 0; i < (int) stakes.size(); i++ ){
+            int width = std::max(min_width,(int)event.fixtures[0].participant_names[i].size());
+            result += fmt::format("{:^{}.2f} | ", stakes[i], width); 
+        }
+        result += " <- stakes for max profit\n"; 
+        result += fmt::format("\t{:^{}}", event.participant_names[0], min_width);
+        for (int i = 1; i< (int)event.participant_names.size(); i++){
+            result += fmt::format(" | {:^{}}", event.participant_names[i], min_width);
         }
     }
+    result += " | max bet | currency | provider | event id \n";
     for (int i = 0; i < (int)event.fixtures.size(); i++){
         bool is_maximal = false;
-        for (int idx = 0; idx < (int)event.fixtures[i].participant_odds.size(); idx++){
-            is_maximal |= event.fixtures[i].participant_odds[idx] == max_odds[idx];
-        } 
-        if (print_not_odds){
-            for (int idx = 0; idx < (int)event.fixtures[i].participant_not_odds.size(); idx++){
-                is_maximal |= event.fixtures[i].participant_not_odds[idx] == max_not_odds[idx];
+        if (not_odds){
+            is_maximal = event.fixtures[i].participant_not_odds[event.max_not_arb_idx] == max_not_odds[event.max_not_arb_idx]
+                       | event.fixtures[i].participant_odds[event.max_not_arb_idx] == max_odds[event.max_not_arb_idx];
+        } else {
+            for (int idx = 0; idx < (int)event.fixtures[i].participant_odds.size(); idx++){
+                is_maximal |= event.fixtures[i].participant_odds[idx] == max_odds[idx];
             } 
         }
         if (!is_maximal) continue;
         result += "\t";
-        int width = std::max(min_width,(int)event.fixtures[0].participant_names[0].size());
         std::string s = " ";
-        if (event.fixtures[i].participant_odds[0] < 1.){
-            s = fmt::format("{:.2f}", 1/event.fixtures[i].participant_odds[0]); 
-        }
-        result += fmt::format("{:^{}}", s, width); 
-        for (int j = 1; j < (int)event.fixtures[i].participant_odds.size(); j++){
-            int width = std::max(min_width,(int)event.fixtures[0].participant_names[j].size());
-            std::string s = " ";
-            if (event.fixtures[i].participant_odds[j] < 1.){
-                s = fmt::format("{:.2f}", 1/event.fixtures[i].participant_odds[j]); 
+        if (not_odds){
+            int width = std::max(min_width,(int)event.fixtures[0].participant_names[event.max_not_arb_idx].size());
+            s = " ";
+            if (event.fixtures[i].participant_odds[event.max_not_arb_idx] < 1.){
+                s = fmt::format("{:.2f}", 1/event.fixtures[i].participant_odds[event.max_not_arb_idx]); 
+            }
+            result += fmt::format("{:^{}}", s, width); 
+            width = std::max(min_width,(int)event.fixtures[0].participant_names[event.max_not_arb_idx].size()+4);
+            s = " ";
+            if (event.fixtures[i].participant_not_odds[event.max_not_arb_idx] < 1.){
+                s = fmt::format("{:.2f}", 1/event.fixtures[i].participant_not_odds[event.max_not_arb_idx]); 
             }
             result += fmt::format(" | {:^{}}", s, width); 
-        }
-        if (print_not_odds){
-            for (int j = 0; j < (int)event.fixtures[i].participant_not_odds.size(); j++){
-                int width = std::max(min_width,(int)event.fixtures[0].participant_names[j].size()+4);
-                std::string s = " ";
-                if (event.fixtures[i].participant_not_odds[j] < 1.){
-                    s = fmt::format("{:.2f}", 1/event.fixtures[i].participant_not_odds[j]); 
+        } else {
+            int width = std::max(min_width,(int)event.fixtures[0].participant_names[0].size());
+            if (event.fixtures[i].participant_odds[0] < 1.){
+                s = fmt::format("{:.2f}", 1/event.fixtures[i].participant_odds[0]); 
+            }
+            result += fmt::format("{:^{}}", s, width); 
+            for (int j = 1; j < (int)event.fixtures[i].participant_odds.size(); j++){
+                int width = std::max(min_width,(int)event.fixtures[0].participant_names[j].size());
+                s = " ";
+                if (event.fixtures[i].participant_odds[j] < 1.){
+                    s = fmt::format("{:.2f}", 1/event.fixtures[i].participant_odds[j]); 
                 }
                 result += fmt::format(" | {:^{}}", s, width); 
             }
         }
         result += fmt::format(" | {:^7.2f} | {:^8} | {:^8} | {}\n",event.fixtures[i].max_nominal_bet,event.fixtures[i].currency, provider_names[event.fixtures[i].pid], event.fixtures[i].id); 
-        
     }
-
     return result;
-
 }
 
 std::string AYS_fixture_to_string(const AYS_fixture fixture) {
